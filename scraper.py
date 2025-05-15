@@ -34,7 +34,10 @@ def get_offers(location_filter):
             location_text = location_el.get_text(strip=True) if location_el else "brak"
 
             # FILTR: dopasuj dokładnie do config['location']
-            if location_filter.lower() not in location_text.lower():
+            normalized_input = location_filter.lower().replace("/", " ").replace(",", " ")
+            normalized_target = location_text.lower().replace("/", " ").replace(",", " ")
+
+            if not all(part in normalized_target for part in normalized_input.split()):
                 continue
 
             # Szczegóły - klucze i wartości (Rooms, Area, Price/m2, Floor)

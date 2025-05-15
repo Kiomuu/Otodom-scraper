@@ -16,12 +16,12 @@ def analyze_all(file_path):
 
     # Czyszczenie i konwersje
     df['price_clean'] = df['price'].str.replace(r'[^\d]', '', regex=True)
-    df = df[df['price_clean'].str.strip() != '']
-    df['price_num'] = df['price_clean'].astype(float)
+    df['price_num'] = pd.to_numeric(df['price_clean'], errors='coerce')
+    df = df.dropna(subset=['price_num'])
 
     df['area_clean'] = df['area'].str.replace(r'[^\d,]', '', regex=True).str.replace(",", ".")
-    df = df[df['area_clean'].str.strip() != '']
-    df['area_m2'] = df['area_clean'].astype(float)
+    df['area_m2'] = pd.to_numeric(df['area_clean'], errors='coerce')
+    df = df.dropna(subset=['area_m2'])
 
     df['rooms_clean'] = df['rooms'].str.extract(r'(\d+)')
     df['rooms_clean'] = pd.to_numeric(df['rooms_clean'], errors='coerce')
