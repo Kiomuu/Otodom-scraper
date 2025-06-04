@@ -7,8 +7,8 @@ import time
 from scraper import get_offers
 from analyzer import tag_offers
 from notifier import send_email
-import datetime
 import os
+from PIL import Image, ImageTk
 
 running = False
 
@@ -21,7 +21,6 @@ def start_scraper_loop(status_label):
             status_label.config(text="⏳ Pobieranie ofert...")
 
             offers = get_offers(config['location'])
-
             if not offers:
                 status_label.config(text="⚠️ Nie znaleziono żadnych ofert.")
                 return
@@ -41,12 +40,11 @@ def start_scraper_loop(status_label):
                 status_label.config(text=f"✅ Wysłano {len(matching)} ofert spełniających kryteria.")
             else:
                 status_label.config(text=f"ℹ️ Pobrano {len(offers)} ofert, brak dopasowań.")
-
         except Exception as e:
-            status_label.config(text=f"❌ Błąd scrapera: {str(e)}")
+            status_label.config(text=f"❌ Błąd scrapera: {e}")
 
     def run():
-        job()  # pierwsze uruchomienie od razu
+        job()  # od razu pierwsze wywołanie
         schedule.every(1).hours.do(job)
         while running:
             schedule.run_pending()
@@ -65,30 +63,30 @@ def start_gui():
     root.title("Otodom Scraper")
 
     # POLA KONFIGURACJI
-    tk.Label(root, text="Lokalizacja (np. warszawa):").pack()
-    location_entry = tk.Entry(root)
+    tk.Label(root, text="Lokalizacja (np. mazowieckie/warszawa):").pack(pady=(5,0))
+    location_entry = tk.Entry(root, width=40)
     location_entry.insert(0, config.get("location", ""))
-    location_entry.pack()
+    location_entry.pack(pady=(0,5))
 
-    tk.Label(root, text="Frazy (np. blisko metra, do remontu):").pack()
-    tags_entry = tk.Entry(root)
+    tk.Label(root, text="Frazy (np. do remontu, blisko metra):").pack(pady=(5,0))
+    tags_entry = tk.Entry(root, width=40)
     tags_entry.insert(0, ", ".join(config.get("tags", [])))
-    tags_entry.pack()
+    tags_entry.pack(pady=(0,5))
 
-    tk.Label(root, text="Email do powiadomień:").pack()
-    email_entry = tk.Entry(root)
+    tk.Label(root, text="Email do powiadomień:").pack(pady=(5,0))
+    email_entry = tk.Entry(root, width=40)
     email_entry.insert(0, config.get("notify_email", ""))
-    email_entry.pack()
+    email_entry.pack(pady=(0,5))
 
-    tk.Label(root, text="Login e-mail nadawcy:").pack()
-    login_entry = tk.Entry(root)
+    tk.Label(root, text="Login e-mail nadawcy:").pack(pady=(5,0))
+    login_entry = tk.Entry(root, width=40)
     login_entry.insert(0, config.get("login_email", ""))
-    login_entry.pack()
+    login_entry.pack(pady=(0,5))
 
-    tk.Label(root, text="Hasło e-mail:").pack()
-    password_entry = tk.Entry(root, show="*")
+    tk.Label(root, text="Hasło e-mail:").pack(pady=(5,0))
+    password_entry = tk.Entry(root, show="*", width=40)
     password_entry.insert(0, config.get("email_password", ""))
-    password_entry.pack()
+    password_entry.pack(pady=(0,10))
 
     # PRZYCISK ZAPISZ
     def save():
@@ -99,69 +97,75 @@ def start_gui():
             login_entry.get(),
             password_entry.get()
         )
-        info_label.config(text="✅ Zapisano konfigurację.")
+        info_label.config(text="✅ Zapisano konfigurację.", fg="green")
 
     tk.Button(root, text="Zapisz konfigurację", command=save).pack()
-    info_label = tk.Label(root, text="")
-    info_label.pack()
+    info_label = tk.Label(root, text="", fg="green")
+    info_label.pack(pady=(2,10))
 
     # START / STOP SCRAPERA
     def start_scraper(status_label):
         global running
         running = True
-        info_label.config(text="🟢 Scrapowanie rozpoczęte")
+        info_label.config(text="🟢 Scrapowanie rozpoczęte", fg="green")
         start_scraper_loop(status_label)
 
     def stop_scraper():
         global running
         running = False
-        info_label.config(text="🔴 Scrapowanie zatrzymane")
+        info_label.config(text="🔴 Scrapowanie zatrzymane", fg="red")
 
     status_label = tk.Label(root, text="Status: ---", fg="blue")
-    status_label.pack()
+    status_label.pack(pady=(0,10))
 
-    tk.Button(root, text="▶ Start scrapera", command=lambda: start_scraper(status_label)).pack()
-    tk.Button(root, text="■ Stop scrapera", command=stop_scraper).pack()
+    btn_frame = tk.Frame(root)
+    btn_frame.pack(pady=(0,10))
+    tk.Button(btn_frame, text="▶ Start scrapera", width=20,
+              command=lambda: start_scraper(status_label)).grid(row=0, column=0, padx=5)
+    tk.Button(btn_frame, text="■ Stop scrapera", width=20,
+              command=stop_scraper).grid(row=0, column=1, padx=5)
 
     # PODGLĄD OGŁOSZEŃ
     def show_offers():
         offers = read_saved_offers()
         output.delete(1.0, tk.END)
         for o in offers[-10:]:
-            output.insert(tk.END, f"{o['title']} ({o['location']})\n{ o['price'] }, {o['area']} m², {o['rooms']} pokoi\n{o['url']}\n\n")
+            output.insert(tk.END,
+                          f"{o['title']}  ({o['location']})\n"
+                          f"{o['price']}, {o['area']} m², {o['rooms']} pokoi\n"
+                          f"{o['url']}\n\n")
 
-    tk.Button(root, text="📄 Pokaż ostatnie ogłoszenia", command=show_offers).pack()
-    output = scrolledtext.ScrolledText(root, height=15, width=80)
-    output.pack()
+    tk.Button(root, text="📄 Pokaż ostatnie ogłoszenia", command=show_offers).pack(pady=(0,5))
+    output = scrolledtext.ScrolledText(root, height=10, width=70)
+    output.pack(pady=(0,10))
 
     # ANALIZA I WYKRESY
     def analyze_and_show():
-        today = datetime.date.today().isoformat()
-        file_path = f"data/oferty_{today}.txt"
         from analyzer import analyze_all
-        analyze_all(file_path)
-
-        from PIL import Image, ImageTk
+        analyze_all()  # analizuj na podstawie Excela
 
         top = tk.Toplevel(root)
         top.title("Wykresy analizy")
 
-        for i, fname in enumerate([
-            "1_ceny.png",
-            "2_cena_m2.png",
-            "3_cena_vs_powierzchnia.png",
-            "4_cena_vs_pokoje.png"
-        ]):
-            path = f"wykresy/{fname}"
+        # Lista plików z wykresami
+        wykresy = [
+            "wykresy/1_price_vs_rooms.png",
+            "wykresy/2_rooms_vs_price_per_room.png",
+            "wykresy/3_floor_distribution.png"
+        ]
+
+        for path in wykresy:
             if os.path.exists(path):
                 img = Image.open(path)
-                img = img.resize((500, 300))
+                img = img.resize((500, 300), Image.ANTIALIAS)
                 tk_img = ImageTk.PhotoImage(img)
                 label = tk.Label(top, image=tk_img)
                 label.image = tk_img
-                label.pack()
+                label.pack(pady=(5,5))
+            else:
+                tk.Label(top, text=f"Brak pliku: {path}", fg="red").pack(pady=(5,5))
 
-    tk.Button(root, text="📊 Analizuj dane", command=analyze_and_show).pack()
+    tk.Button(root, text="📊 Analizuj dane", command=analyze_and_show).pack(pady=(0,10))
 
     root.mainloop()
 

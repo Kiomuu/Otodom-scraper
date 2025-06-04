@@ -1,74 +1,152 @@
+import os
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
-import os
 import re
 
-def analyze_all(file_path):
-    if os.path.getsize(file_path) == 0:
-        print("[WARNING] Pusty plik ofert – pomijam analizę.")
+
+def analyze_all():
+    """
+    Generuje 3 wykresy na podstawie pliku Excel z ofertami:
+      1) Cena vs liczba pokoi (scatter)
+      2) Liczba pokoi vs cena na pokój (scatter)
+      3) Rozkład ofert wg numeru piętra (histogram/barplot)
+    Wszystkie zapisuje w "wykresy/".
+    """
+    # 1. Ścieżka do dzisiejszego pliku Excel
+    today = pd.Timestamp.today().date().isoformat()
+    excel_path = f"data/oferty_{today}.xlsx"
+
+    if not os.path.exists(excel_path):
+        print(f"[WARNING] Nie znaleziono pliku: {excel_path}. Upewnij się, że scraper działał wcześniej.")
         return
 
-    df = pd.read_csv(file_path, sep='\t', header=None, names=[
-        "title", "price", "location", "rooms", "area", "price_per_m2",
-        "floor", "description", "url", "date"
-    ])
+    # 2. Wczytaj dane
+    df = pd.read_excel(excel_path)
 
-    # Czyszczenie i konwersje
-    df['price_clean'] = df['price'].str.replace(r'[^\d]', '', regex=True)
-    df['price_num'] = pd.to_numeric(df['price_clean'], errors='coerce')
-    df = df.dropna(subset=['price_num'])
+    # 3. Sprawdź potrzebne kolumny
+    for col in ["price", "rooms", "floor"]:
+        if col not in df.columns:
+            print(f"[ERROR] Brak kolumny '{col}' w pliku Excel.")
+            return
 
-    df['area_clean'] = df['area'].str.replace(r'[^\d,]', '', regex=True).str.replace(",", ".")
-    df['area_m2'] = pd.to_numeric(df['area_clean'], errors='coerce')
-    df = df.dropna(subset=['area_m2'])
+    # 4. Przygotuj price_num (usuń wszystko poza cyframi)
+    df["price_clean"] = (
+        df["price"].astype(str)
+        .str.replace(r"[^\d]", "", regex=True)
+    )
+    df["price_num"] = pd.to_numeric(df["price_clean"], errors="coerce")
+    df = df.dropna(subset=["price_num"])
 
-    df['rooms_clean'] = df['rooms'].str.extract(r'(\d+)')
-    df['rooms_clean'] = pd.to_numeric(df['rooms_clean'], errors='coerce')
+    # 5. Przygotuj rooms_int (tylko liczba całkowita)
+    df["rooms_clean"] = (
+        df["rooms"].astype(str)
+        .str.extract(r"(\d+)")
+    )
+    df["rooms_int"] = pd.to_numeric(df["rooms_clean"], errors="coerce")
+    df = df.dropna(subset=["rooms_int"])
+    df["rooms_int"] = df["rooms_int"].astype(int)  # usuwamy „połówki”
 
+    # 6. Przygotuj floor_int (parter = 0, lub pierwsza liczba)
+    def parse_floor(text):
+        t = str(text).lower()
+        if "parter" in t:
+            return 0
+        m = re.search(r"(\d+)", t)
+        return int(m.group(1)) if m else None
+
+    df["floor_int"] = df["floor"].apply(parse_floor)
+    df = df.dropna(subset=["floor_int"])
+    df["floor_int"] = df["floor_int"].astype(int)
+
+    # 7. Oblicz cenę za pokój
+    df["price_per_room"] = df["price_num"] / df["rooms_int"]
+
+    # 8. Utwórz folder na wykresy
     os.makedirs("wykresy", exist_ok=True)
 
-    # 1. Histogram cen
-    plt.figure()
-    sns.histplot(df['price_num'], bins=20)
-    plt.title("Rozkład cen mieszkań")
-    plt.xlabel("Cena [zł]")
-    plt.ylabel("Liczba ofert")
-    plt.savefig("wykresy/1_ceny.png")
-    plt.close()
+    # ---- WYKRES 1: Cena vs liczba pokoi ----
+    try:
+        plt.figure(figsize=(8, 5))
+        sns.set_style("whitegrid")
+        sns.scatterplot(
+            x="rooms_int",
+            y="price_num",
+            data=df,
+            alpha=0.7,
+            s=80,        # rozmiar znacznika
+            color="tab:blue"
+        )
+        plt.title("Cena vs liczba pokoi", fontsize=14)
+        plt.xlabel("Liczba pokoi", fontsize=12)
+        plt.ylabel("Cena [zł]", fontsize=12)
+        plt.xticks(df["rooms_int"].sort_values().unique())  # tylko całkowite ticki
+        plt.tight_layout()
+        path1 = "wykresy/1_price_vs_rooms.png"
+        plt.savefig(path1, dpi=100)
+        plt.close()
+        print(f"[INFO] Wygenerowano wykres Cena vs liczba pokoi → {path1}")
+    except Exception as e:
+        print(f"[ERROR] Błąd przy wykresie Cena vs pokoi: {e}")
 
-    # 2. Cena za m²
-    df['price_m2_calc'] = df['price_num'] / df['area_m2']
-    plt.figure()
-    sns.histplot(df['price_m2_calc'], bins=20)
-    plt.title("Rozkład cen za m²")
-    plt.xlabel("Cena za m² [zł]")
-    plt.ylabel("Liczba ofert")
-    plt.savefig("wykresy/2_cena_m2.png")
-    plt.close()
+    # ---- WYKRES 2: Liczba pokoi vs cena na pokój ----
+    try:
+        plt.figure(figsize=(8, 5))
+        sns.set_style("whitegrid")
+        sns.scatterplot(
+            x="rooms_int",
+            y="price_per_room",
+            data=df,
+            alpha=0.7,
+            s=80,
+            color="tab:green"
+        )
+        plt.title("Liczba pokoi vs cena na pokój", fontsize=14)
+        plt.xlabel("Liczba pokoi", fontsize=12)
+        plt.ylabel("Cena na pokój [zł]", fontsize=12)
+        plt.xticks(df["rooms_int"].sort_values().unique())
+        plt.tight_layout()
+        path2 = "wykresy/2_rooms_vs_price_per_room.png"
+        plt.savefig(path2, dpi=100)
+        plt.close()
+        print(f"[INFO] Wygenerowano wykres Liczba pokoi vs cena/pokój → {path2}")
+    except Exception as e:
+        print(f"[ERROR] Błąd przy wykresie pokoi vs cena/pokój: {e}")
 
-    # 3. Cena vs. powierzchnia
-    plt.figure()
-    sns.scatterplot(x='area_m2', y='price_num', data=df)
-    plt.title("Cena vs. powierzchnia")
-    plt.xlabel("Powierzchnia [m²]")
-    plt.ylabel("Cena [zł]")
-    plt.savefig("wykresy/3_cena_vs_powierzchnia.png")
-    plt.close()
+    # ---- WYKRES 3: Rozkład ofert wg piętra ----
+    try:
+        plt.figure(figsize=(8, 5))
+        sns.set_style("whitegrid")
+        floor_counts = df["floor_int"].value_counts().sort_index()
+        sns.barplot(
+            x=floor_counts.index.astype(int),
+            y=floor_counts.values,
+            palette="rocket"
+        )
+        plt.title("Rozkład ofert wg piętra", fontsize=14)
+        plt.xlabel("Piętro", fontsize=12)
+        plt.ylabel("Liczba ofert", fontsize=12)
+        plt.tight_layout()
+        path3 = "wykresy/3_floor_distribution.png"
+        plt.savefig(path3, dpi=100)
+        plt.close()
+        print(f"[INFO] Wygenerowano wykres Rozkładu pięter → {path3}")
+    except Exception as e:
+        print(f"[ERROR] Błąd przy wykresie rozkładu pięter: {e}")
 
-    # 4. Średnia cena wg liczby pokoi
-    plt.figure()
-    sns.barplot(x='rooms_clean', y='price_num', data=df)
-    plt.title("Średnia cena wg liczby pokoi")
-    plt.xlabel("Liczba pokoi")
-    plt.ylabel("Średnia cena [zł]")
-    plt.savefig("wykresy/4_cena_vs_pokoje.png")
-    plt.close()
+    print("[INFO] Analiza zakończona.")
 
-    print("[INFO] Wygenerowano wszystkie wykresy.")
 
 def tag_offers(offers, tags):
+    """
+    Dla każdej oferty (słownik) dopisuje klucz 'tags' – listę fraz, które występują
+    w jej tytule lub opisie. Służy do filtrowania w GUI.
+    """
     for offer in offers:
         full_text = (offer.get("title", "") + " " + offer.get("description", "")).lower()
         offer["tags"] = [tag.lower() for tag in tags if tag.lower() in full_text]
     return offers
+
+
+if __name__ == "__main__":
+    analyze_all()

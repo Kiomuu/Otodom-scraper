@@ -1,7 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 import datetime
-from utils import save_offers_to_txt, load_config
+from utils import save_offers_to_excel, load_config
 
 
 def get_offers(location_filter):
@@ -16,43 +16,56 @@ def get_offers(location_filter):
 
     for article in articles:
         try:
-            # Cena
-            price = article.select_one('span[data-sentry-component="Price"]')
-            price = price.get_text(strip=True) if price else "brak"
+            # ---- 1. Cena ----
+            price_el = article.select_one('span[data-sentry-component="Price"]')
+            price = price_el.get_text(strip=True) if price_el else "brak"
 
-            # Tytuł
-            title = article.select_one('p[data-cy="listing-item-title"]')
-            title = title.get_text(strip=True) if title else "brak"
+            # ---- 2. Tytuł ----
+            title_el = article.select_one('p[data-cy="listing-item-title"]')
+            title = title_el.get_text(strip=True) if title_el else "brak"
 
-            # Link
-            link = article.select_one('a[data-cy="listing-item-link"]')
-            href = link['href'] if link and link.has_attr('href') else ""
+            # ---- 3. Link ----
+            link_el = article.select_one('a[data-cy="listing-item-link"]')
+            href = link_el['href'] if link_el and link_el.has_attr('href') else ""
             full_url = f"https://www.otodom.pl{href}" if href.startswith("/pl") else href
 
-            # Lokalizacja
-            location_el = article.select_one('[data-sentry-component="Address"]')
-            location_text = location_el.get_text(strip=True) if location_el else "brak"
+            # ---- 4. Lokalizacja ----
+            loc_el = article.select_one('[data-sentry-component="Address"]')
+            location_text = loc_el.get_text(strip=True) if loc_el else "brak"
 
-            # FILTR: dopasuj dokładnie do config['location']
+            # ---- FILTR LOKALIZACJI ----
             normalized_input = location_filter.lower().replace("/", " ").replace(",", " ")
             normalized_target = location_text.lower().replace("/", " ").replace(",", " ")
-
             if not all(part in normalized_target for part in normalized_input.split()):
                 continue
 
-            # Szczegóły - klucze i wartości (Rooms, Area, Price/m2, Floor)
-            def extract_dd(component_name):
-                dd = article.select_one(f'dd[data-sentry-component="{component_name}"]')
+            # ---- 5. Liczba pokoi ----
+            def extract_dd_by_component(name):
+                dd = article.select_one(f'dd[data-sentry-component="{name}"]')
                 return dd.get_text(strip=True) if dd else "brak"
 
-            rooms = extract_dd("RoomsDefinition")
-            area = extract_dd("Area")
-            price_per_m2 = extract_dd("PricePerMeterDefinition")
-            floor = extract_dd("FloorsDefinition")
+            rooms = extract_dd_by_component("RoomsDefinition")
 
-            # Krótki opis
-            desc = article.select_one('[data-sentry-component="DescriptionText"]')
-            description = desc.get_text(strip=True) if desc else "brak"
+            # ---- 6. Powierzchnia (area) ----
+            # Znajdź <dt> z tekstem "Powierzchnia", a następnie pobierz następujący <dd>
+            area = "brak"
+            dt_list = article.select('dl[data-sentry-component="SpecsList"] dt')
+            for dt in dt_list:
+                if "Powierzchnia" in dt.get_text():
+                    dd = dt.find_next_sibling("dd")
+                    if dd:
+                        area = dd.get_text(strip=True)
+                    break
+
+            # ---- 7. Cena za metr kwadratowy (jeśli jest dostępna) ----
+            price_per_m2 = extract_dd_by_component("PricePerMeterDefinition")
+
+            # ---- 8. Piętro ----
+            floor = extract_dd_by_component("FloorsDefinition")
+
+            # ---- 9. Krótki opis ----
+            desc_el = article.select_one('div[data-sentry-component="DescriptionText"]')
+            description = desc_el.get_text(strip=True) if desc_el else "brak"
 
             offers.append({
                 "title": title,
@@ -71,10 +84,12 @@ def get_offers(location_filter):
             print(f"[WARN] Błąd przy analizie ogłoszenia: {e}")
             continue
 
-    save_offers_to_txt(offers)
+    # Zapis do Excela
+    save_offers_to_excel(offers)
     return offers
 
 
 if __name__ == "__main__":
     config = load_config()
-    get_offers(config['location'])
+    offers = get_offers(config['location'])
+    print(f"[INFO] Pobrano {len(offers)} ofert.")
